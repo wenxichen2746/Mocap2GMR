@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Command entrypoint for batch-retargeting segmented TRC clips."""
+
+from trsegs_to_gmr import main
+
+
+if __name__ == "__main__":
+    main()

@@ -210,6 +210,82 @@ def scaled_ground_height(retargeter, human_frames: list[dict[str, tuple[np.ndarr
     return float(lowest)
 
 
+def selected_frame_ids(source_fps: float, frame_count: int, target_fps: float, start_frame: int, max_frames: int | None) -> np.ndarray:
+    frame_ids = np.arange(start_frame, frame_count)
+    frame_ids = frame_ids[np.floor(frame_ids * target_fps / source_fps).astype(int) !=
+                          np.floor((frame_ids - 1) * target_fps / source_fps).astype(int)]
+    if max_frames is not None:
+        frame_ids = frame_ids[:max_frames]
+    if not len(frame_ids):
+        raise ValueError("No frames selected; check --start-frame and --max-frames")
+    return frame_ids
+
+
+def retarget_trc_to_motion_data(
+    trc_path: Path,
+    robot: str = "unitree_g1",
+    target_fps: float = 30.0,
+    human_height: float | None = None,
+    start_frame: int = 0,
+    max_frames: int | None = None,
+    retargeter=None,
+) -> tuple[dict, float, int, int]:
+    source_fps, markers = load_trc(trc_path)
+    height = human_height if human_height is not None else estimate_height(markers)
+    frame_count = len(next(iter(markers.values())))
+    frame_ids = selected_frame_ids(source_fps, frame_count, target_fps, start_frame, max_frames)
+
+    if retargeter is None:
+        sys.path.insert(0, str(GMR_ROOT))
+        from general_motion_retargeting import GeneralMotionRetargeting as GMR
+
+        retargeter = GMR(src_human="trc_vicon", tgt_robot=robot, actual_human_height=height)
+
+    human_frames = [marker_frame(markers, int(index)) for index in frame_ids]
+    retargeter.set_ground_offset(scaled_ground_height(retargeter, human_frames))
+    qpos = np.asarray([retargeter.retarget(frame) for frame in human_frames])
+
+    motion_data = {
+        "fps": min(source_fps, target_fps),
+        "root_pos": qpos[:, :3],
+        "root_rot": qpos[:, 3:7][:, [1, 2, 3, 0]],  # GMR pickle convention: xyzw
+        "dof_pos": qpos[:, 7:],
+        "local_body_pos": None,
+        "link_body_list": None,
+        "source_trc": str(trc_path),
+    }
+    return motion_data, height, frame_count, len(frame_ids)
+
+
+def save_motion_data(motion_data: dict, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("wb") as handle:
+        pickle.dump(motion_data, handle)
+
+
+def convert_trc_to_gmr(
+    trc_path: Path,
+    output_path: Path,
+    robot: str = "unitree_g1",
+    target_fps: float = 30.0,
+    human_height: float | None = None,
+    start_frame: int = 0,
+    max_frames: int | None = None,
+    retargeter=None,
+) -> tuple[dict, float, int, int]:
+    motion_data, height, frame_count, selected_count = retarget_trc_to_motion_data(
+        trc_path=trc_path,
+        robot=robot,
+        target_fps=target_fps,
+        human_height=human_height,
+        start_frame=start_frame,
+        max_frames=max_frames,
+        retargeter=retargeter,
+    )
+    save_motion_data(motion_data, output_path)
+    return motion_data, height, frame_count, selected_count
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trc_path", type=Path)
@@ -227,40 +303,29 @@ def main() -> None:
     args = parse_args()
     source_fps, markers = load_trc(args.trc_path)
     height = args.human_height if args.human_height is not None else estimate_height(markers)
-    frame_ids = np.arange(args.start_frame, len(next(iter(markers.values()))))
-    frame_ids = frame_ids[np.floor(frame_ids * args.target_fps / source_fps).astype(int) !=
-                          np.floor((frame_ids - 1) * args.target_fps / source_fps).astype(int)]
-    if args.max_frames is not None:
-        frame_ids = frame_ids[: args.max_frames]
-    if not len(frame_ids):
-        raise ValueError("No frames selected; check --start-frame and --max-frames")
+    frame_ids = selected_frame_ids(
+        source_fps,
+        len(next(iter(markers.values()))),
+        args.target_fps,
+        args.start_frame,
+        args.max_frames,
+    )
 
     print(f"Loaded {args.trc_path}: {len(next(iter(markers.values())))} frames at {source_fps:g} Hz")
     print(f"Estimated subject height: {height:.3f} m; selected {len(frame_ids)} frames at <= {args.target_fps:g} Hz")
     if args.inspect_only:
         return
 
-    sys.path.insert(0, str(GMR_ROOT))
-    from general_motion_retargeting import GeneralMotionRetargeting as GMR
-
-    retargeter = GMR(src_human="trc_vicon", tgt_robot=args.robot, actual_human_height=height)
-    human_frames = [marker_frame(markers, int(index)) for index in frame_ids]
-    retargeter.set_ground_offset(scaled_ground_height(retargeter, human_frames))
-    qpos = np.asarray([retargeter.retarget(frame) for frame in human_frames])
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    motion_data = {
-        "fps": min(source_fps, args.target_fps),
-        "root_pos": qpos[:, :3],
-        "root_rot": qpos[:, 3:7][:, [1, 2, 3, 0]],  # GMR pickle convention: xyzw
-        "dof_pos": qpos[:, 7:],
-        "local_body_pos": None,
-        "link_body_list": None,
-        "source_trc": str(args.trc_path),
-    }
-    with args.output.open("wb") as handle:
-        pickle.dump(motion_data, handle)
-    print(f"Saved {len(qpos)} retargeted frames to {args.output}")
+    motion_data, _, _, selected_count = convert_trc_to_gmr(
+        trc_path=args.trc_path,
+        output_path=args.output,
+        robot=args.robot,
+        target_fps=args.target_fps,
+        human_height=height,
+        start_frame=args.start_frame,
+        max_frames=args.max_frames,
+    )
+    print(f"Saved {selected_count} retargeted frames to {args.output}")
 
 
 if __name__ == "__main__":

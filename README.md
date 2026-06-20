@@ -94,6 +94,15 @@ python trc_to_gmr.py mocap_data/session_001.trc \
   --inspect-only
 ```
 
+To convert every segmented TRC clip in a folder, use `trsegs_to_gmr`. It writes matched pickle names such as `seg_000.pkl`, `seg_001.pkl`, and `seg_002.pkl`, which makes it easy to pair the original segment with the retargeted robot trajectory.
+
+```bash
+python trsegs_to_gmr segments_trc/session_001 \
+  --output-dir retargeted/session_001 \
+  --robot unitree_g1 \
+  --target-fps 30
+```
+
 ## 4. Replay Transformed Robot Trajectories
 
 `visualize_robot_pkl.py` loads the transformed GMR pickle and replays the Unitree G1 trajectory in the GMR MuJoCo viewer.
@@ -110,6 +119,20 @@ python visualize_robot_pkl.py retargeted/session_001_seg_000_hit_000123_g1.pkl \
   --robot unitree_g1 \
   --once
 ```
+
+To compare segmented TRC markers and retargeted robot motion side by side, use `visualize_trcandpkl.py`. It matches files by the `seg_XXX` token, so `session_001_seg_000_hit_000123.trc` is paired with `seg_000.pkl`.
+
+```bash
+python visualize_trcandpkl.py segments_trc/session_001 retargeted/session_001 \
+  --robot unitree_g1 \
+  --show-body-frames
+```
+
+Useful controls:
+
+- Right arrow or `n`: next matched clip
+- Left arrow or `p`: previous matched clip
+- `h`: print help
 
 ## Working Data Folders
 

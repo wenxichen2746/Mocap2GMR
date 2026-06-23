@@ -134,6 +134,60 @@ Useful controls:
 - Left arrow or `p`: previous matched clip
 - `h`: print help
 
+## 5. Train a Motion-VAE
+
+`train_motion_vae.py` trains an autoregressive conditional Motion-VAE over retargeted GMR pickle clips. Each frame is represented as:
+
+```text
+[root_pos, root_rot, dof_pos]
+```
+
+The default config is [motion_vae_config.yml](motion_vae_config.yml). Its data roots can point either to retargeted PKL folders or to segment folders such as `segments_trc/trial_05`; segment folders are resolved to the matching `retargeted/<trial_name>` folder.
+
+```bash
+python train_motion_vae.py --config motion_vae_config.yml
+```
+
+Checkpoints and training history are written under:
+
+```text
+motion_vae/
+├── checkpoints/
+│   ├── latest.pt
+│   └── epoch_XXXX.pt
+└── history.json
+```
+
+Generate visualizable GMR pickle samples from a trained checkpoint:
+
+```bash
+python train_motion_vae.py \
+  --config motion_vae_config.yml \
+  --mode generate \
+  --checkpoint motion_vae/checkpoints/latest.pt \
+  --num-samples 20 \
+  --output-dir motion_vae/generated
+```
+
+Generated samples keep the same pickle layout as retargeted clips, so they can be replayed with:
+
+```bash
+python visualize_robot_pkl.py motion_vae/generated/sample_000.pkl --robot unitree_g1
+```
+
+To browse every generated sample and filter out low-quality motions:
+
+```bash
+python visualize_robot_pkl.py motion_vae/generated --robot unitree_g1
+```
+
+Useful controls:
+
+- Right arrow or `n`: next generated clip
+- Left arrow or `p`: previous generated clip
+- `a`: archive the current clip under `motion_vae/generated/archived`
+- `h`: print help
+
 ## Working Data Folders
 
 The local working folders below are ignored by git:
@@ -141,3 +195,4 @@ The local working folders below are ignored by git:
 - `mocap_data/`: raw TRC recordings
 - `segments_trc/`: generated TRC segments
 - `retargeted/`: generated GMR robot-motion pickle files
+- `motion_vae/`: generated VAE checkpoints, logs, and sampled pickle files

@@ -1,0 +1,48 @@
+# Motion-VAE training config for retargeted GMR pickle clips.
+#
+# Roots may point directly to retargeted PKL folders, or to segment TRC folders
+# such as segments_trc/trial_05. When a segment folder is given, the loader
+# infers the matching retargeted/<trial_name> folder.
+
+data:
+  roots:
+    - segments_trc/trial_05
+    - segments_trc/trial_06
+  sequence_length: 33
+  fps: 30.0
+  train_split: 0.9
+  seed: 7
+
+model:
+  hidden_size: 256
+  latent_size: 32
+  encoder_layers: 2
+  decoder_layers: 1
+  dropout: 0.1
+
+training:
+  output_dir: motion_vae
+  epochs: 300
+  batch_size: 32
+  learning_rate: 0.0003
+  weight_decay: 0.000001
+  grad_clip_norm: 1.0
+  teacher_forcing_start: 1.0
+  teacher_forcing_end: 0.35
+  checkpoint_every: 25
+  device: auto
+
+loss:
+  beta_max: 0.01
+  kl_cycle_epochs: 50
+  phase_weight: 0.05
+  phase_velocity_weight: 0.02
+  smooth_weight: 0.1
+  ground_weight: 0.0
+  ground_height: 0.035
+
+generation:
+  checkpoint: motion_vae/checkpoints/latest.pt
+  output_dir: motion_vae/generated
+  num_samples: 20
+  temperature: 1.0
